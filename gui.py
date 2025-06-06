@@ -10,6 +10,7 @@ from tkinter import ttk, filedialog, messagebox
 from typing import List, Optional, Callable
 import threading
 from batch_ocr import BatchOCR
+import config
 
 class OCRApplication:
     """Main application class for the OCR GUI"""
@@ -23,10 +24,12 @@ class OCRApplication:
 
         self.selected_files: List[str] = []
         self.output_path: Optional[str] = None
-        self.tesseract_path: Optional[str] = None
 
-        # Try to initialize OCR processor
-        self.ocr_processor = BatchOCR()
+        # Load configuration
+        self._load_config()
+
+        # Try to initialize OCR processor with saved Tesseract path
+        self.ocr_processor = BatchOCR(tesseract_cmd=self.tesseract_path)
 
         self._create_widgets()
         self._create_layout()
@@ -34,6 +37,25 @@ class OCRApplication:
         # Check Tesseract availability on startup
         if not self.ocr_processor.tesseract_available:
             self._show_tesseract_warning()
+
+    def _load_config(self):
+        """Load configuration from file"""
+        # Load Tesseract path
+        self.tesseract_path = config.get_config_value("tesseract_path")
+
+        # Load last output directory
+        last_output_dir = config.get_config_value("last_output_dir")
+        if last_output_dir and os.path.exists(last_output_dir):
+            self.last_output_dir = last_output_dir
+        else:
+            self.last_output_dir = os.path.expanduser("~")
+
+        # Load last input directory
+        last_input_dir = config.get_config_value("last_input_dir")
+        if last_input_dir and os.path.exists(last_input_dir):
+            self.last_input_dir = last_input_dir
+        else:
+            self.last_input_dir = os.path.expanduser("~")
 
     def _create_widgets(self):
         """Create all the widgets for the application"""
@@ -59,7 +81,13 @@ class OCRApplication:
         # Tesseract configuration
         self.tesseract_frame = ttk.LabelFrame(self.root, text="Tesseract OCR Configuration")
         self.tesseract_path_var = tk.StringVar()
-        self.tesseract_path_var.set("Using default Tesseract installation")
+
+        # Display the current Tesseract path
+        if self.tesseract_path:
+            self.tesseract_path_var.set(f"Using Tesseract at: {self.tesseract_path}")
+        else:
+            self.tesseract_path_var.set("Using default Tesseract installation")
+
         self.tesseract_label = ttk.Label(self.tesseract_frame, textvariable=self.tesseract_path_var, wraplength=500)
         self.tesseract_btn = ttk.Button(self.tesseract_frame, text="Set Tesseract Path", command=self._set_tesseract_path)
 
@@ -108,6 +136,7 @@ class OCRApplication:
         """Add individual files to the selection"""
         files = filedialog.askopenfilenames(
             title="Select Images",
+            initialdir=self.last_input_dir,
             filetypes=[
                 ("Image files", "*.png *.jpg *.jpeg *.bmp *.tiff *.tif *.gif"),
                 ("All files", "*.*")
@@ -115,6 +144,11 @@ class OCRApplication:
         )
 
         if files:
+            # Save the last directory used
+            last_dir = os.path.dirname(files[0])
+            self.last_input_dir = last_dir
+            config.update_config("last_input_dir", last_dir)
+
             for file in files:
                 if file not in self.selected_files:
                     self.selected_files.append(file)
@@ -122,9 +156,16 @@ class OCRApplication:
 
     def _add_folder(self):
         """Add all image files from a folder"""
-        folder = filedialog.askdirectory(title="Select Folder Containing Images")
+        folder = filedialog.askdirectory(
+            title="Select Folder Containing Images",
+            initialdir=self.last_input_dir
+        )
 
         if folder:
+            # Save the last directory used
+            self.last_input_dir = folder
+            config.update_config("last_input_dir", folder)
+
             image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif')
             for root, _, files in os.walk(folder):
                 for file in files:
@@ -143,6 +184,7 @@ class OCRApplication:
         """Select the output JSON file"""
         file = filedialog.asksaveasfilename(
             title="Save OCR Results",
+            initialdir=self.last_output_dir,
             defaultextension=".json",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
@@ -150,6 +192,11 @@ class OCRApplication:
         if file:
             self.output_path = file
             self.output_path_var.set(file)
+
+            # Save the last output directory
+            last_dir = os.path.dirname(file)
+            self.last_output_dir = last_dir
+            config.update_config("last_output_dir", last_dir)
 
     def _update_progress(self, current: int, total: int, filename: str):
         """Update the progress indicators"""
@@ -244,9 +291,12 @@ class OCRApplication:
 
             # Check if it worked
             if self.ocr_processor.tesseract_available:
+                # Save the configuration
+                config.update_config("tesseract_path", file)
+
                 messagebox.showinfo(
                     "Tesseract Configured",
-                    "Tesseract OCR has been successfully configured."
+                    "Tesseract OCR has been successfully configured and saved for future use."
                 )
             else:
                 messagebox.showerror(

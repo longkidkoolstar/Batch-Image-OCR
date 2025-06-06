@@ -8,6 +8,7 @@ A Python application with a graphical user interface for extracting text from mu
 - Extract text from images using Tesseract OCR
 - Save extracted text to a JSON file
 - User-friendly GUI with progress tracking
+- Persistent configuration that remembers your settings between sessions
 
 ## Requirements
 
@@ -48,9 +49,21 @@ A Python application with a graphical user interface for extracting text from mu
 
 3. Select an output JSON file location using the "Select Output File" button.
 
-4. Click "Process Images" to start the OCR process.
+4. If needed, set the Tesseract OCR path using the "Set Tesseract Path" button.
 
-5. Once processing is complete, the extracted text will be saved to the specified JSON file.
+5. Click "Process Images" to start the OCR process.
+
+6. Once processing is complete, the extracted text will be saved to the specified JSON file.
+
+### Configuration Persistence
+
+The application automatically saves your settings between sessions:
+
+- **Tesseract Path**: Once you set the path to the Tesseract executable, it will be remembered for future sessions.
+- **Last Input Directory**: The application remembers the last folder you used to select images.
+- **Last Output Directory**: The application remembers the last folder you used to save output files.
+
+These settings are stored in a configuration file located at `~/.batch_image_ocr/config.json`.
 
 ## Output Format
 
