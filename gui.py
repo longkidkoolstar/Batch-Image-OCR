@@ -7,6 +7,7 @@ Provides a user interface for selecting images, processing them, and saving resu
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import json
 from typing import List, Optional, Callable
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import threading
@@ -83,6 +84,15 @@ class OCRApplication:
         self.output_label = ttk.Label(self.output_frame, textvariable=self.output_path_var, wraplength=500)
         self.output_btn = ttk.Button(self.output_frame, text="Select Output File", command=self._select_output)
 
+        self.display_output_var = tk.BooleanVar(value=False)
+        self.display_output_checkbox = ttk.Checkbutton(self.output_frame, text="Display Output in GUI", variable=self.display_output_var, command=self._toggle_output_mode)
+
+        # OCR Output Display Area
+        self.ocr_output_frame = ttk.LabelFrame(self.root, text="OCR Output")
+        self.ocr_output_text = tk.Text(self.ocr_output_frame, wrap=tk.WORD, height=10, state=tk.DISABLED)
+        self.ocr_output_scroll = ttk.Scrollbar(self.ocr_output_frame, orient=tk.VERTICAL, command=self.ocr_output_text.yview)
+        self.ocr_output_text.config(yscrollcommand=self.ocr_output_scroll.set)
+
         # Tesseract configuration
         self.tesseract_frame = ttk.LabelFrame(self.root, text="Tesseract OCR Configuration")
         self.tesseract_path_var = tk.StringVar()
@@ -122,7 +132,8 @@ class OCRApplication:
         # Output selection area
         self.output_frame.pack(fill=tk.X, padx=10, pady=10)
         self.output_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
-        self.output_btn.pack(side=tk.RIGHT, padx=5, pady=5)
+        self.output_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        self.display_output_checkbox.pack(side=tk.RIGHT, padx=5, pady=5)
 
         # Tesseract configuration area
         self.tesseract_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -136,6 +147,11 @@ class OCRApplication:
 
         # Process button
         self.process_btn.pack(pady=20)
+
+        # OCR Output Display Area Layout
+        self.ocr_output_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.ocr_output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.ocr_output_scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
 
     def _add_files(self):
         """Add individual files to the selection"""
@@ -185,18 +201,31 @@ class OCRApplication:
         self.selected_files = []
         self.file_list.delete(0, tk.END)
 
+    def _toggle_output_mode(self):
+        """Toggle between saving to file and displaying in GUI"""
+        if self.display_output_var.get():
+            self.output_btn.config(state=tk.DISABLED)
+            self.output_path_var.set("Output will be displayed in GUI")
+            self.output_path = None # Clear output path if displaying in GUI
+        else:
+            self.output_btn.config(state=tk.NORMAL)
+            self.output_path_var.set("No output file selected")
+
     def _select_output(self):
         """Select the output JSON file"""
         file = filedialog.asksaveasfilename(
             title="Save OCR Results",
             initialdir=self.last_output_dir,
             defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            filetypes=[("JSON files", "*.json"), ("All files", "*.* ")]
         )
 
         if file:
             self.output_path = file
             self.output_path_var.set(file)
+            # If a file is selected, uncheck the display in GUI option
+            self.display_output_var.set(False)
+            self._toggle_output_mode()
 
             # Save the last output directory
             last_dir = os.path.dirname(file)
@@ -260,8 +289,8 @@ class OCRApplication:
             messagebox.showwarning("No Images", "Please select at least one image to process.")
             return
 
-        if not self.output_path:
-            messagebox.showwarning("No Output", "Please select an output file location.")
+        if not self.output_path and not self.display_output_var.get():
+            messagebox.showwarning("No Output", "Please select an output file location or choose to display in GUI.")
             return
 
         # Disable UI during processing
@@ -280,30 +309,55 @@ class OCRApplication:
                 callback=self._update_progress
             )
 
-            success = self.ocr_processor.save_to_json(results, self.output_path)
-
-            # Update UI on the main thread
-            self.root.after(0, lambda: self._processing_complete(success))
+            if self.display_output_var.get():
+                # Display in GUI
+                formatted_results = {os.path.basename(k): v for k, v in results.items()}
+                output_text = json.dumps(formatted_results, indent=4, ensure_ascii=False)
+                self.root.after(0, lambda: self._display_ocr_output(output_text))
+                self.root.after(0, lambda: self._processing_complete(True, display_in_gui=True))
+            else:
+                # Save to file
+                success = self.ocr_processor.save_to_json(results, self.output_path)
+                self.root.after(0, lambda: self._processing_complete(success, display_in_gui=False))
 
         except Exception as e:
             self.root.after(0, lambda: self._processing_error(str(e)))
 
-    def _processing_complete(self, success: bool):
+    def _display_ocr_output(self, text: str):
+        """Display OCR output in the text widget"""
+        self.ocr_output_text.config(state=tk.NORMAL)
+        self.ocr_output_text.delete(1.0, tk.END)
+        self.ocr_output_text.insert(tk.END, text)
+        self.ocr_output_text.config(state=tk.DISABLED)
+
+    def _processing_complete(self, success: bool, display_in_gui: bool = False):
         """Handle completion of processing"""
         self._set_ui_state(True)
 
         if success:
             self.progress_var.set("Processing complete!")
-            messagebox.showinfo(
-                "Processing Complete",
-                f"Text extracted from {len(self.selected_files)} images and saved to {self.output_path}"
-            )
+            if display_in_gui:
+                messagebox.showinfo(
+                    "Processing Complete",
+                    f"Text extracted from {len(self.selected_files)} images and displayed in the GUI."
+                )
+            else:
+                messagebox.showinfo(
+                    "Processing Complete",
+                    f"Text extracted from {len(self.selected_files)} images and saved to {self.output_path}"
+                )
         else:
             self.progress_var.set("Error saving results")
-            messagebox.showerror(
-                "Save Error",
-                f"Failed to save results to {self.output_path}"
-            )
+            if not display_in_gui:
+                messagebox.showerror(
+                    "Save Error",
+                    f"Failed to save results to {self.output_path}"
+                )
+            else:
+                messagebox.showerror(
+                    "Processing Error",
+                    "Failed to process images or display results."
+                )
 
     def _processing_error(self, error_msg: str):
         """Handle processing errors"""
@@ -318,6 +372,7 @@ class OCRApplication:
         self.add_folder_btn['state'] = state
         self.clear_btn['state'] = state
         self.output_btn['state'] = state
+        self.display_output_checkbox['state'] = state
         self.tesseract_btn['state'] = state
         self.process_btn['state'] = state
 
