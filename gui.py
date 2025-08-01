@@ -8,6 +8,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import List, Optional, Callable
+from tkinterdnd2 import DND_FILES, TkinterDnD
 import threading
 from batch_ocr import BatchOCR
 import config
@@ -17,7 +18,7 @@ class OCRApplication:
 
     def __init__(self):
         """Initialize the application"""
-        self.root = tk.Tk()
+        self.root = TkinterDnD.Tk()
         self.root.title("Batch Image OCR Tool")
         self.root.geometry("800x600")
         self.root.minsize(600, 400)
@@ -64,6 +65,10 @@ class OCRApplication:
         self.file_list = tk.Listbox(self.file_frame, selectmode=tk.EXTENDED, height=10)
         self.file_scroll = ttk.Scrollbar(self.file_frame, orient=tk.VERTICAL, command=self.file_list.yview)
         self.file_list.configure(yscrollcommand=self.file_scroll.set)
+
+        # Enable drag and drop for the file list
+        self.file_list.drop_target_register(DND_FILES)
+        self.file_list.dnd_bind('<<Drop>>', self._drop_files)
 
         # Buttons for file operations
         self.btn_frame = ttk.Frame(self.file_frame)
@@ -197,6 +202,50 @@ class OCRApplication:
             last_dir = os.path.dirname(file)
             self.last_output_dir = last_dir
             config.update_config("last_output_dir", last_dir)
+
+    def _drop_files(self, event):
+        """Handle files dropped onto the listbox"""
+        # TkinterDnD returns a string of paths, potentially with spaces
+        # It's safer to parse it as a list of paths
+        file_paths = self.root.tk.splitlist(event.data)
+        
+        for file_path in file_paths:
+            # Check if it's a directory
+            if os.path.isdir(file_path):
+                self._add_folder_from_path(file_path)
+            else:
+                # Check if it's an image file
+                image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif')
+                if file_path.lower().endswith(image_extensions):
+                    if file_path not in self.selected_files:
+                        self.selected_files.append(file_path)
+                        self.file_list.insert(tk.END, os.path.basename(file_path))
+                else:
+                    messagebox.showwarning(
+                        "Unsupported File Type",
+                        f"Skipping non-image file: {os.path.basename(file_path)}"
+                    )
+        
+        # Update last input directory if files were added
+        if file_paths:
+            first_path = file_paths[0]
+            if os.path.isfile(first_path):
+                last_dir = os.path.dirname(first_path)
+            else:
+                last_dir = first_path # It's a directory
+            self.last_input_dir = last_dir
+            config.update_config("last_input_dir", last_dir)
+
+    def _add_folder_from_path(self, folder_path):
+        """Helper to add files from a folder path (used by drag and drop)"""
+        image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif')
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                if file.lower().endswith(image_extensions):
+                    full_path = os.path.join(root, file)
+                    if full_path not in self.selected_files:
+                        self.selected_files.append(full_path)
+                        self.file_list.insert(tk.END, os.path.basename(full_path))
 
     def _update_progress(self, current: int, total: int, filename: str):
         """Update the progress indicators"""
