@@ -13,6 +13,9 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 import threading
 from batch_ocr import BatchOCR
 import config
+from PIL import ImageGrab, Image
+import io
+import tempfile
 
 class OCRApplication:
     """Main application class for the OCR GUI"""
@@ -26,6 +29,10 @@ class OCRApplication:
 
         self.selected_files: List[str] = []
         self.output_path: Optional[str] = None
+
+        # Bind paste event
+        self.root.bind('<Control-v>', self._paste_image)
+        self.root.bind('<Command-v>', self._paste_image) # For macOS
 
         # Load configuration
         self._load_config()
@@ -75,6 +82,7 @@ class OCRApplication:
         self.btn_frame = ttk.Frame(self.file_frame)
         self.add_btn = ttk.Button(self.btn_frame, text="Add Files", command=self._add_files)
         self.add_folder_btn = ttk.Button(self.btn_frame, text="Add Folder", command=self._add_folder)
+        self.paste_btn = ttk.Button(self.btn_frame, text="Paste Image", command=self._paste_image)
         self.clear_btn = ttk.Button(self.btn_frame, text="Clear Selection", command=self._clear_selection)
 
         # Output selection
@@ -127,6 +135,7 @@ class OCRApplication:
         self.btn_frame.pack(fill=tk.X, padx=5, pady=5)
         self.add_btn.pack(side=tk.LEFT, padx=5)
         self.add_folder_btn.pack(side=tk.LEFT, padx=5)
+        self.paste_btn.pack(side=tk.LEFT, padx=5)
         self.clear_btn.pack(side=tk.RIGHT, padx=5)
 
         # Output selection area
@@ -200,6 +209,27 @@ class OCRApplication:
         """Clear the current file selection"""
         self.selected_files = []
         self.file_list.delete(0, tk.END)
+
+    def _paste_image(self, event=None):
+        """Paste image from clipboard and add to selected files"""
+        try:
+            # Attempt to get image from clipboard
+            img = ImageGrab.grabclipboard()
+
+            if img:
+                # Save the image to a temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_file:
+                    img_path = temp_file.name
+                    img.save(img_path)
+
+                if img_path not in self.selected_files:
+                    self.selected_files.append(img_path)
+                    self.file_list.insert(tk.END, os.path.basename(img_path))
+                    messagebox.showinfo("Image Pasted", f"Pasted image added: {os.path.basename(img_path)}")
+            else:
+                messagebox.showinfo("No Image", "No image found in clipboard.")
+        except Exception as e:
+            messagebox.showerror("Paste Error", f"Failed to paste image: {e}")
 
     def _toggle_output_mode(self):
         """Toggle between saving to file and displaying in GUI"""
@@ -370,6 +400,7 @@ class OCRApplication:
         state = tk.NORMAL if enabled else tk.DISABLED
         self.add_btn['state'] = state
         self.add_folder_btn['state'] = state
+        self.paste_btn['state'] = state
         self.clear_btn['state'] = state
         self.output_btn['state'] = state
         self.display_output_checkbox['state'] = state
